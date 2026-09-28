@@ -14,7 +14,18 @@ Game xếp khối kiểu Block Blast viết bằng Flutter, chạy trên iOS.
 | `lib/main.dart` | Giao diện: kéo thả, hiệu ứng, màn hình hết lượt |
 | `test/` | Test luật chơi và giao diện |
 
-## Chạy trên iPhone
+## Tải IPA không ký (không cần máy Mac)
+
+GitHub Actions tự build mỗi khi push lên `main`, khi có pull request, hoặc khi bấm tay:
+
+1. Vào tab **Actions** → **Build iOS (unsigned IPA)** → **Run workflow**.
+2. Chờ build xong (~10 phút), mở lần chạy đó → tải **BlockBlast-unsigned-ipa** ở mục *Artifacts*.
+3. Giải nén để lấy `BlockBlast-unsigned.ipa`, rồi cài bằng công cụ tự ký như
+   **Sideloadly** hoặc **AltStore** (dùng Apple ID của bạn), hoặc **TrollStore** nếu máy hỗ trợ.
+
+> IPA không ký thì iPhone không cài trực tiếp được — công cụ trên sẽ ký bằng Apple ID của bạn lúc cài.
+
+## Chạy trên iPhone bằng máy Mac
 
 Cần một máy **Mac** có [Flutter](https://docs.flutter.dev/get-started/install/macos/mobile-ios) và **Xcode**.
 

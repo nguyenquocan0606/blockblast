@@ -1,0 +1,45 @@
+name: Build iOS (unsigned IPA)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      # Thư mục ios/ không được commit, nên tạo nó ngay trên máy build.
+      - name: Create iOS project files
+        run: flutter create --platforms=ios --org com.nguyenquocan0606 .
+
+      - run: flutter pub get
+
+      - run: flutter analyze --no-fatal-infos
+
+      - run: flutter test
+
+      - name: Build app (no code signing)
+        run: flutter build ios --release --no-codesign
+
+      # IPA thực chất là file zip chứa thư mục Payload/Runner.app.
+      - name: Package IPA
+        run: |
+          mkdir -p build/Payload
+          cp -R build/ios/iphoneos/Runner.app build/Payload/
+          cd build && zip -qr BlockBlast-unsigned.ipa Payload
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BlockBlast-unsigned-ipa
+          path: build/BlockBlast-unsigned.ipa
+          retention-days: 30
