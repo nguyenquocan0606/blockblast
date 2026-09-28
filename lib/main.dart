@@ -156,38 +156,51 @@ class _GamePageState extends State<GamePage> {
 
   @override
   Widget build(BuildContext context) {
-    final boardSide = min(MediaQuery.sizeOf(context).width - 44, 428.0);
-    final cellSize = boardSide / boardSize;
-
     return Scaffold(
       body: SafeArea(
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            // Vùng thả phủ cả màn hình: khi đặt khối ở hàng dưới cùng,
-            // ngón tay nằm dưới bàn cờ (vì khối được nhấc lên trên ngón tay).
-            DragTarget<int>(
-              onMove: (d) => _onMove(d, cellSize),
-              onLeave: (_) => setState(() => _preview = null),
-              onAcceptWithDetails: (d) => _onDrop(d, cellSize),
-              builder: (context, _, __) => Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _header(boardSide + 12),
-                    const SizedBox(height: 16),
-                    _board(boardSide, cellSize),
-                    const SizedBox(height: 24),
-                    _tray(boardSide + 12, cellSize),
-                  ],
-                ),
-              ),
-            ),
-            if (_comboText != null) _comboOverlay(),
-            if (_showGameOver) _gameOverOverlay(),
-          ],
-        ),
+        child: LayoutBuilder(builder: (context, constraints) {
+          // Bàn cờ phải vừa cả chiều ngang lẫn chiều dọc (màn hình thấp như iPhone SE).
+          final boardSide = max(
+            0.0,
+            min(min(constraints.maxWidth - 44, constraints.maxHeight - _reservedHeight), 428.0),
+          );
+          return _content(boardSide, boardSide / boardSize);
+        }),
       ),
+    );
+  }
+
+  /// Chiều cao cố định ngoài bàn cờ: điểm số, khoảng cách, viền bàn và khay khối.
+  static const _reservedHeight = 60 + 16 + 12 + 24 + _maxTrayHeight + 16;
+  static const _maxTrayHeight = _maxTrayCell * 5 + 32;
+  static const _maxTrayCell = 22.0;
+
+  Widget _content(double boardSide, double cellSize) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        // Vùng thả phủ cả màn hình: khi đặt khối ở hàng dưới cùng,
+        // ngón tay nằm dưới bàn cờ (vì khối được nhấc lên trên ngón tay).
+        DragTarget<int>(
+          onMove: (d) => _onMove(d, cellSize),
+          onLeave: (_) => setState(() => _preview = null),
+          onAcceptWithDetails: (d) => _onDrop(d, cellSize),
+          builder: (context, _, __) => Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _header(boardSide + 12),
+                const SizedBox(height: 16),
+                _board(boardSide, cellSize),
+                const SizedBox(height: 24),
+                _tray(boardSide + 12, cellSize),
+              ],
+            ),
+          ),
+        ),
+        if (_comboText != null) _comboOverlay(),
+        if (_showGameOver) _gameOverOverlay(),
+      ],
     );
   }
 
@@ -265,7 +278,7 @@ class _GamePageState extends State<GamePage> {
   }
 
   Widget _tray(double width, double cellSize) {
-    final small = min(cellSize * 0.5, 22.0);
+    final small = min(cellSize * 0.5, _maxTrayCell);
     return SizedBox(
       width: width,
       height: small * 5 + 32,
