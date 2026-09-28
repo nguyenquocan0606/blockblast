@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'drag_math.dart';
 import 'game_logic.dart';
 
 void main() {
@@ -32,6 +33,9 @@ const _palette = [
 const _clearDuration = Duration(milliseconds: 300);
 
 typedef _Preview = ({int index, int row, int col});
+
+/// Khối đang kéo; các toạ độ là toạ độ màn hình.
+typedef _Drag = ({int index, Offset pieceStart, Offset pointerStart, Offset position});
 
 class BlockBlastApp extends StatelessWidget {
   const BlockBlastApp({super.key});
@@ -63,7 +67,9 @@ class _GamePageState extends State<GamePage> {
 
   final _game = Game();
   final _boardKey = GlobalKey();
+  final _stackKey = GlobalKey();
   int _best = 0;
+  _Drag? _drag;
   _Preview? _preview;
   Map<Cell, int> _clearing = {};
   int _clearId = 0;
@@ -88,27 +94,57 @@ class _GamePageState extends State<GamePage> {
     await prefs.setInt(_bestKey, _best);
   }
 
-  /// Ô trên bàn cờ mà góc trên-trái của khối đang kéo sẽ rơi vào, nếu đặt được.
-  _Preview? _previewFor(DragTargetDetails<int> details, double cellSize) {
-    final piece = _game.tray[details.data];
+  Rect? _boardRect() {
     final box = _boardKey.currentContext?.findRenderObject() as RenderBox?;
-    if (piece == null || box == null) return null;
-    final local = box.globalToLocal(details.offset);
-    final row = (local.dy / cellSize).round(), col = (local.dx / cellSize).round();
-    if (!_game.canPlace(piece.shape, row, col)) return null;
-    return (index: details.data, row: row, col: col);
+    return box == null ? null : box.localToGlobal(Offset.zero) & box.size;
   }
 
-  void _onMove(DragTargetDetails<int> details, double cellSize) {
-    final next = _previewFor(details, cellSize);
-    if (next != _preview) setState(() => _preview = next);
+  void _dragStart(int index, Offset pointer, double cellSize) {
+    if (_drag != null) return; // bỏ qua ngón tay thứ hai
+    final shape = _game.tray[index]!.shape;
+    // Nhấc khối lên trên ngón tay một ô để ngón tay không che khối.
+    final pieceStart = pointer - Offset(shape.width * cellSize / 2, (shape.height + 1) * cellSize);
+    HapticFeedback.selectionClick();
+    setState(() => _drag = (index: index, pieceStart: pieceStart, pointerStart: pointer, position: pieceStart));
+    _dragUpdate(index, pointer, cellSize);
   }
 
-  void _onDrop(DragTargetDetails<int> details, double cellSize) {
-    final target = _previewFor(details, cellSize);
+  void _dragUpdate(int index, Offset pointer, double cellSize) {
+    final drag = _drag;
+    final board = _boardRect();
+    if (drag == null || drag.index != index || board == null) return;
+    final shape = _game.tray[index]!.shape;
+    final position = dragPiecePosition(
+      pieceStart: drag.pieceStart,
+      pointerStart: drag.pointerStart,
+      pointer: pointer,
+      board: board,
+      piece: Size(shape.width * cellSize, shape.height * cellSize),
+    );
+    final row = ((position.dy - board.top) / cellSize).round();
+    final col = ((position.dx - board.left) / cellSize).round();
     setState(() {
+      _drag = (index: index, pieceStart: drag.pieceStart, pointerStart: drag.pointerStart, position: position);
+      _preview = _game.canPlace(shape, row, col) ? (index: index, row: row, col: col) : null;
+    });
+  }
+
+  void _dragEnd(int index) {
+    if (_drag?.index != index) return;
+    final target = _preview;
+    setState(() {
+      _drag = null;
       _preview = null;
       if (target != null) _place(target);
+    });
+  }
+
+  /// Chạm rồi thả mà không kéo: trả khối về khay, không đặt.
+  void _dragCancel(int index) {
+    if (_drag?.index != index) return;
+    setState(() {
+      _drag = null;
+      _preview = null;
     });
   }
 
@@ -156,38 +192,58 @@ class _GamePageState extends State<GamePage> {
 
   @override
   Widget build(BuildContext context) {
-    final boardSide = min(MediaQuery.sizeOf(context).width - 44, 428.0);
-    final cellSize = boardSide / boardSize;
-
     return Scaffold(
       body: SafeArea(
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            // Vùng thả phủ cả màn hình: khi đặt khối ở hàng dưới cùng,
-            // ngón tay nằm dưới bàn cờ (vì khối được nhấc lên trên ngón tay).
-            DragTarget<int>(
-              onMove: (d) => _onMove(d, cellSize),
-              onLeave: (_) => setState(() => _preview = null),
-              onAcceptWithDetails: (d) => _onDrop(d, cellSize),
-              builder: (context, _, __) => Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _header(boardSide + 12),
-                    const SizedBox(height: 16),
-                    _board(boardSide, cellSize),
-                    const SizedBox(height: 24),
-                    _tray(boardSide + 12, cellSize),
-                  ],
-                ),
-              ),
-            ),
-            if (_comboText != null) _comboOverlay(),
-            if (_showGameOver) _gameOverOverlay(),
-          ],
-        ),
+        child: LayoutBuilder(builder: (context, constraints) {
+          // Bàn cờ phải vừa cả chiều ngang lẫn chiều dọc (màn hình thấp như iPhone SE).
+          final boardSide = max(
+            0.0,
+            min(min(constraints.maxWidth - 44, constraints.maxHeight - _reservedHeight), 428.0),
+          );
+          return _content(boardSide, boardSide / boardSize);
+        }),
       ),
+    );
+  }
+
+  /// Chiều cao cố định ngoài bàn cờ: điểm số, khoảng cách, viền bàn và khay khối.
+  static const _reservedHeight = 60 + 16 + 12 + 24 + _maxTrayHeight + 16;
+  static const _maxTrayHeight = _maxTrayCell * 5 + 32;
+  static const _maxTrayCell = 22.0;
+
+  Widget _content(double boardSide, double cellSize) {
+    final drag = _drag;
+    return Stack(
+      key: _stackKey,
+      fit: StackFit.expand,
+      children: [
+        Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _header(boardSide + 12),
+              const SizedBox(height: 16),
+              _board(boardSide, cellSize),
+              const SizedBox(height: 24),
+              _tray(boardSide + 12, cellSize),
+            ],
+          ),
+        ),
+        if (drag != null) _draggedPiece(drag, cellSize),
+        if (_comboText != null) _comboOverlay(),
+        if (_showGameOver) _gameOverOverlay(),
+      ],
+    );
+  }
+
+  Widget _draggedPiece(_Drag drag, double cellSize) {
+    final stackBox = _stackKey.currentContext?.findRenderObject() as RenderBox?;
+    if (stackBox == null) return const SizedBox.shrink();
+    final local = stackBox.globalToLocal(drag.position);
+    return Positioned(
+      left: local.dx,
+      top: local.dy,
+      child: IgnorePointer(child: _PieceView(_game.tray[drag.index]!, cellSize)),
     );
   }
 
@@ -265,7 +321,7 @@ class _GamePageState extends State<GamePage> {
   }
 
   Widget _tray(double width, double cellSize) {
-    final small = min(cellSize * 0.5, 22.0);
+    final small = min(cellSize * 0.5, _maxTrayCell);
     return SizedBox(
       width: width,
       height: small * 5 + 32,
@@ -281,20 +337,20 @@ class _GamePageState extends State<GamePage> {
   Widget _trayPiece(int index, double cellSize, double small) {
     final piece = _game.tray[index];
     if (piece == null) return const SizedBox.shrink();
-    final shape = piece.shape;
-    return Draggable<int>(
-      data: index,
-      feedback: _PieceView(piece, cellSize),
-      childWhenDragging: const SizedBox.shrink(),
-      // Nhấc khối lên trên ngón tay một ô để ngón tay không che khối.
-      dragAnchorStrategy: (_, __, ___) =>
-          Offset(shape.width * cellSize / 2, (shape.height + 1) * cellSize),
-      onDragStarted: HapticFeedback.selectionClick,
-      // Nền trong suốt để khối nhỏ (1 ô) vẫn dễ chạm.
-      child: Container(
-        color: Colors.transparent,
+    // Giữ nguyên GestureDetector khi đang kéo (chỉ ẩn khối), nếu không cử chỉ sẽ bị huỷ.
+    return GestureDetector(
+      key: ValueKey('tray-$index'),
+      behavior: HitTestBehavior.opaque, // khối nhỏ (1 ô) vẫn dễ chạm
+      onPanDown: (d) => _dragStart(index, d.globalPosition, cellSize),
+      onPanUpdate: (d) => _dragUpdate(index, d.globalPosition, cellSize),
+      onPanEnd: (_) => _dragEnd(index),
+      onPanCancel: () => _dragCancel(index),
+      child: Padding(
         padding: const EdgeInsets.all(16),
-        child: _PieceView(piece, small),
+        child: Opacity(
+          opacity: _drag?.index == index ? 0 : 1,
+          child: _PieceView(piece, small),
+        ),
       ),
     );
   }
