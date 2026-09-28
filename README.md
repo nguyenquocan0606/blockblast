@@ -23,7 +23,8 @@ GitHub Actions tự build mỗi khi push lên `main`, khi có pull request, ho�
 3. Giải nén để lấy `BlockBlast-unsigned.ipa`, rồi cài bằng công cụ tự ký như
    **Sideloadly** hoặc **AltStore** (dùng Apple ID của bạn), hoặc **TrollStore** nếu máy hỗ trợ.
 
-> IPA không ký thì iPhone không cài trực tiếp được — công cụ trên sẽ ký bằng Apple ID của bạn lúc cài.
+> IPA không ký thì iPhone không cài trực tiếp được. Sideloadly/AltStore sẽ ký bằng Apple ID của bạn lúc cài;
+> TrollStore thì cài thẳng, không cần Apple ID (chỉ chạy trên một số phiên bản iOS nhất định).
 
 ## Chạy trên iPhone bằng máy Mac
 
